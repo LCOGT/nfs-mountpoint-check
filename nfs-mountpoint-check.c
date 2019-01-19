@@ -14,6 +14,7 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <getopt.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -23,6 +24,16 @@
 #include <fcntl.h>
 #include <stdio.h>
 
+/* Maximum errno */
+#define ERRNO_MAX 256
+
+/*
+ * Error status code which means "we were unable to determine the status
+ * of the mountpoint." There is no errno code for this situation.
+ */
+static const int EUNKNOWN = 255;
+
+/* Global variables */
 static int verbosity = 1;
 static pid_t child = 0;
 
@@ -81,20 +92,23 @@ static int check_mountpoint_readdir(const char *path)
 
 	dirp = opendir(path);
 	if (dirp == NULL) {
-		debug("opendir failed: %s\n", strerror(errno));
-		return 1;
+		const int errsave = errno;
+		debug("opendir failed: %s\n", strerror(errsave));
+		return errsave;
 	}
 
 	dirent = readdir(dirp);
 	if (dirent == NULL) {
-		debug("readdir failed: %s\n", strerror(errno));
+		const int errsave = errno;
+		debug("readdir failed: %s\n", strerror(errsave));
 		closedir(dirp);
-		return 1;
+		return errsave;
 	}
 
 	if (closedir(dirp) < 0) {
-		debug("closedir failed: %s\n", strerror(errno));
-		return 1;
+		const int errsave = errno;
+		debug("closedir failed: %s\n", strerror(errsave));
+		return errsave;
 	}
 
 	/* success */
@@ -127,21 +141,24 @@ static int check_mountpoint_stat(const char *path)
 	/* open the directory */
 	fd = open(path, O_RDONLY | O_SYNC);
 	if (fd < 0) {
-		debug("open failed: %s\n", strerror(errno));
-		return 1;
+		const int errsave = errno;
+		debug("open failed: %s\n", strerror(errsave));
+		return errsave;
 	}
 
 	/* call fstat on the directory */
 	if (fstat(fd, &buf) < 0) {
-		debug("fstat failed: %s\n", strerror(errno));
+		const int errsave = errno;
+		debug("fstat failed: %s\n", strerror(errsave));
 		close(fd);
-		return 1;
+		return errsave;
 	}
 
 	/* close the directory */
 	if (close(fd) < 0) {
-		debug("close failed: %s\n", strerror(errno));
-		return 1;
+		const int errsave = errno;
+		debug("close failed: %s\n", strerror(errsave));
+		return errsave;
 	}
 
 	/* success */
@@ -248,23 +265,39 @@ static int wait_for_child(const int timeout)
 	if (WIFSIGNALED(status)) {
 		const int ret = WTERMSIG(status);
 		debug("child exited from signal = %d\n", ret);
-		return ret;
+		/*
+		 * The child was most likely killed by the timeout handler, so
+		 * we assume the mount is hung. We'll use ETIMEDOUT for this
+		 * error case.
+		 */
+		if (ret == SIGKILL) {
+			debug("child was killed by timeout, mountpoint hung\n");
+			return ETIMEDOUT;
+		}
+
+		/*
+		 * Otherwise, the child was killed through some unknown means
+		 * that we did not initiate. We could not determine anything
+		 * about the status of the mountpoint.
+		 */
+		debug("mountpoint in unknown status\n");
+		return EUNKNOWN;
 	}
 
 	/* Child was stopped */
 	if (WIFSTOPPED(status)) {
 		debug("child was stopped\n");
-		return 1;
+		return EUNKNOWN;
 	}
 
 	/* Child was continued */
 	if (WIFCONTINUED(status)) {
 		debug("child was continued\n");
-		return 1;
+		return EUNKNOWN;
 	}
 
 	/* not sure how we'd possibly get here ... */
-	return 1;
+	return EUNKNOWN;
 }
 
 /*
@@ -292,7 +325,7 @@ static void handle_sigalrm(int signum)
 	 * signal-safe variant of exit. There isn't anything else we can do.
 	 */
 	if (kill(child, SIGKILL) < 0) {
-		_exit(1);
+		_exit(EUNKNOWN);
 	}
 }
 
@@ -304,11 +337,12 @@ static void usage(char *argv[])
 	printf("Check an NFS mount to determine whether it is operating correctly.\n");
 	printf("\n");
 	printf("Options:\n");
-	printf("-h, --help          display this help information\n");
-	printf("-m, --method=x      check method (comma separated: default=stat,readdir)\n");
-	printf("-t, --timeout=x     check timeout (seconds, default=2)\n");
-	printf("-v, --verbose       increase verbosity (min=0, default=1, max=3)\n");
-	printf("-q, --quiet         decrease verbosity (see above)\n");
+	printf("-h, --help              display this help information\n");
+	printf("-i, --ignore-errno=x    ignore specific errno value\n");
+	printf("-m, --method=x          check method (comma separated: default=stat,readdir)\n");
+	printf("-t, --timeout=x         check timeout (seconds, default=2)\n");
+	printf("-v, --verbose           increase verbosity (min=0, default=1, max=3)\n");
+	printf("-q, --quiet             decrease verbosity (see above)\n");
 	printf("\n");
 }
 
@@ -331,21 +365,54 @@ static int parse_check_method(char *s)
 			check_method |= CHECK_METHOD_READDIR;
 		} else {
 			error("Unknown check method '%s'\n", tok);
-			exit(1);
+			exit(EINVAL);
 		}
 	}
 
 	return check_method;
 }
 
+/*
+ * Equivalent to atoi(), except that it exits with an error message if the
+ * user gave us a bogus value.
+ */
+static int safe_atoi(const char *s)
+{
+	char *end = NULL;
+	long ret = 0;
+
+	ret = strtol(s, &end, 10);
+	if (s != end && errno != ERANGE && ret >= INT_MIN && ret <= INT_MAX) {
+		return (int)ret;
+	}
+
+	error("Unable to parse integer: %s\n", s);
+	exit(EINVAL);
+}
+
 int main(int argc, char *argv[])
 {
+	int exitcode_map[ERRNO_MAX];
 	struct sigaction action;
 	const char *path = NULL;
 	int check_method_set = 0;
 	int check_method = 0;
 	int timeout = 2;
 	int c = 0;
+	int i;
+
+	/*
+	 * Initialize the mapping from child process return code to
+	 * process exit status. By default, this process exits with
+	 * the status code equal to the errno returned by any system
+	 * call which failed, or 0 on success.
+	 *
+	 * We give the user an option to ignore any errno value as
+	 * they see fit for their needs.
+	 */
+	for (i = 0; i < ERRNO_MAX; i++) {
+		exitcode_map[i] = i;
+	}
 
 	/* option parsing: see the GNU getopt manual */
 	while (1) {
@@ -355,12 +422,14 @@ int main(int argc, char *argv[])
 			{ "timeout", no_argument, NULL, 't', },
 			{ "verbose", no_argument, NULL, 'v', },
 			{ "quiet", no_argument, NULL, 'q', },
+			{ "ignore-errno", no_argument, NULL, 'i', },
 			{ NULL, no_argument, NULL, 0, },
 		};
 
 		int option_index = 0;
+		int tmp = 0;
 
-		c = getopt_long(argc, argv, "hm:t:vq", long_options, &option_index);
+		c = getopt_long(argc, argv, "hm:t:vqi:", long_options, &option_index);
 		if (c == -1) {
 			break;
 		}
@@ -369,12 +438,16 @@ int main(int argc, char *argv[])
 		case 'h':
 			usage(argv);
 			exit(0);
+		case 'i':
+			tmp = safe_atoi(optarg);
+			exitcode_map[tmp] = 0;
+			break;
 		case 'm':
 			check_method_set = 1;
 			check_method = parse_check_method(optarg);
 			break;
 		case 't':
-			timeout = atoi(optarg);
+			timeout = safe_atoi(optarg);
 			break;
 		case 'v':
 			if (verbosity <= 2) {
@@ -406,17 +479,22 @@ int main(int argc, char *argv[])
 	debug("Argument check_method = 0x%.8x\n", check_method);
 	debug("Argument timeout = %d\n", timeout);
 	debug("Argument verbosity = %d\n", verbosity);
+	for (i = 0; i < ERRNO_MAX; i++) {
+		if (exitcode_map[i] != i) {
+			debug("Exit status code %d ignored\n", i);
+		}
+	}
 
 	/* the user did not specify any path to check */
 	if ((argc - optind) <= 0) {
 		error("No path was specified!\n");
-		exit(1);
+		exit(EINVAL);
 	}
 
 	/* the user specified too many paths to check */
 	if ((argc - optind) > 1) {
 		error("Too many paths were specified!\n");
-		exit(1);
+		exit(EINVAL);
 	}
 
 	/* this is the path the user specified */
@@ -425,7 +503,7 @@ int main(int argc, char *argv[])
 	/* check that this program is being run as root */
 	if (geteuid() > 0) {
 		error("This program must be run as root\n");
-		exit(1);
+		exit(EINVAL);
 	}
 
 	/* setup a signal handler for SIGALRM */
@@ -434,8 +512,9 @@ int main(int argc, char *argv[])
 	action.sa_flags = SA_RESTART;
 
 	if (sigaction(SIGALRM, &action, 0) < 0) {
-		error("Unable to install SIGALRM handler: %s\n", strerror(errno));
-		exit(1);
+		const int errsave = errno;
+		error("Unable to install SIGALRM handler: %s\n", strerror(errsave));
+		exit(errno);
 	}
 
 	/* Print an informational message */
@@ -461,18 +540,25 @@ int main(int argc, char *argv[])
 	 */
 	child = fork();
 	if (child < 0) {
-		error("Unable to create child process: %s\n", strerror(errno));
-		exit(1);
+		const int errsave = errno;
+		error("Unable to create child process: %s\n", strerror(errsave));
+		exit(errsave);
 	} else if (child == 0) {
 		/* this happens within the child process only */
-		int ret = check_mountpoint(path, check_method);
+		const int ret = check_mountpoint(path, check_method);
 		exit(ret);
 	} else {
 		/* this happens within the parent process only */
-		int ret = wait_for_child(timeout);
+		const int ret = wait_for_child(timeout);
 		debug("wait_for_child(%d) = %d\n", timeout, ret);
 		verbose("Check process exited with status code %d\n", ret);
-		exit(ret);
+
+		/*
+		 * Exit with the return code the check process gave us, while
+		 * also possibly ignoring any return codes that the user
+		 * instructed us to ignore.
+		 */
+		exit(exitcode_map[ret]);
 	}
 
 	/* this is never reached */

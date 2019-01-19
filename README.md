@@ -12,9 +12,23 @@ automatically fix NFS mount points when they are not operating correctly.
 | Option | Description | Default Value |
 | --- | --- | --- |
 | `-h`, `--help` | Print help information | N/A |
+| `-i`, `--ignore-errno=N` | Ignore an errno value | N/A |
 | `-m`, `--method=X,Y,Z` | Check method(s) | `stat,readdir` |
 | `-t`, `--timeout=N` | Timeout (seconds) | 2 |
-| `-v`, `--verbose` | Verbosity (0-3) | 0 |
+| `-v`, `--verbose` | Increase Verbosity (0-3) | 1 |
+| `-q`, `--quiet` | Decrease Verbosity (0-3) | 1 |
+
+## Ignoring Error Codes
+
+This utility gives you the ability to selectively ignore errors from any of the
+system calls which it makes as part of checking the NFS mount point. It is
+particularly useful to ignore ENOENT (No such file or directory).
+
+You may specify the `--ignore-errno=N` option as many times as necessary.
+
+The special error code EUNKNOWN (value 255) is used if this utility cannot
+determine the state of the NFS mount point. This usually happens because a
+system call never returned and the timeout was reached.
 
 ## Background Information
 
