@@ -395,7 +395,6 @@ int main(int argc, char *argv[])
 	int exitcode_map[ERRNO_MAX];
 	struct sigaction action;
 	const char *path = NULL;
-	int check_method_set = 0;
 	int check_method = 0;
 	int timeout = 2;
 	int c = 0;
@@ -443,7 +442,6 @@ int main(int argc, char *argv[])
 			exitcode_map[tmp] = 0;
 			break;
 		case 'm':
-			check_method_set = 1;
 			check_method = parse_check_method(optarg);
 			break;
 		case 't':
@@ -470,7 +468,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* default check method: use all available methods */
-	if (check_method_set == 0) {
+	if (check_method == 0) {
 		debug("No check method specified, using default: stat,readdir\n");
 		check_method |= CHECK_METHOD_STAT;
 		check_method |= CHECK_METHOD_READDIR;
