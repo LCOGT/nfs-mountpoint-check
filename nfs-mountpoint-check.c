@@ -417,11 +417,11 @@ int main(int argc, char *argv[])
 	while (1) {
 		static struct option long_options[] = {
 			{ "help", no_argument, NULL, 'h', },
-			{ "method", no_argument, NULL, 'm', },
-			{ "timeout", no_argument, NULL, 't', },
+			{ "method", required_argument, NULL, 'm', },
+			{ "timeout", required_argument, NULL, 't', },
 			{ "verbose", no_argument, NULL, 'v', },
 			{ "quiet", no_argument, NULL, 'q', },
-			{ "ignore-errno", no_argument, NULL, 'i', },
+			{ "ignore-errno", required_argument, NULL, 'i', },
 			{ NULL, no_argument, NULL, 0, },
 		};
 
