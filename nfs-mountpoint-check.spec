@@ -1,6 +1,6 @@
 Summary: NFS Mountpoint Check
 Name: nfs-mountpoint-check
-Version: 1.0
+Version: 1.1
 Release: 1%{?dist}
 License: MIT
 Group: Applications/System
