@@ -1,5 +1,6 @@
 PREFIX := /usr
-CFLAGS := -std=gnu99 -O2 -march=native -pipe -ggdb -Wall -Wextra -Werror
+CFLAGS := -std=gnu99 -O2 -march=native -pipe -ggdb -Wall -Wextra -Werror $(shell getconf LFS_CFLAGS)
+LDFLAGS := $(shell getconf LFS_LDFLAGS)
 
 .PHONY: all
 all: nfs-mountpoint-check

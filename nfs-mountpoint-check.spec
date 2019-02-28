@@ -17,8 +17,15 @@ and outputs a network weather file suitable for serving to the WMS/RCS.
 %setup -q
 
 %build
-CFLAGS="${CFLAGS:-%optflags}" ; export CFLAGS ; 
-%{?__global_ldflags:LDFLAGS="${LDFLAGS:-%__global_ldflags}" ; export LDFLAGS ;}
+CFLAGS="${CFLAGS:-%optflags}"
+CFLAGS="${CFLAGS} $(getconf LFS_CFLAGS)"
+
+%{?__global_ldflags:LDFLAGS="${LDFLAGS:-%__global_ldflags}"}
+LDFLAGS="${LDFLAGS} $(getconf LFS_LDFLAGS)"
+
+export CFLAGS
+export LDFLAGS
+
 make CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
 
 %install
