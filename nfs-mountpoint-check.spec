@@ -1,6 +1,6 @@
 Summary: NFS Mountpoint Check
 Name: nfs-mountpoint-check
-Version: 1.2
+Version: 1.3
 Release: 1%{?dist}
 License: MIT
 Group: Applications/System
@@ -40,5 +40,7 @@ rm -rf %{buildroot}
 %{_bindir}/%{name}
 
 %changelog
+* Thu Feb 28 2019 Ira W. Snyder <isnyder@lco.global> - 1.3-1
+- Add Large File Support to avoid EOVERFLOW errors.
 * Mon Jan 14 2019 Ira W. Snyder <isnyder@lco.global> - 1.0-1
 - Initial package.
