@@ -9,9 +9,7 @@ Source0: %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
-This application is the Boltwood Cloud Interface (BCI). The application
-connects to a virtual serial port to communicate with a Boltwood Cloud Sensor,
-and outputs a network weather file suitable for serving to the WMS/RCS. 
+NFS Mountpoint Check utility.
 
 %prep
 %setup -q
